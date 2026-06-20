@@ -4,6 +4,9 @@ j3Markdown is a Windows desktop Markdown editor built with Tauri 2, TypeScript, 
 
 It is designed for editing local `.md` and `.markdown` files in a simple tabbed desktop workflow.
 
+<img width="454" height="400" alt="j3markdown" src="https://github.com/user-attachments/assets/6880c414-5f60-47b1-9031-47700b49be1d" />
+
+
 ## Project Status
 
 This project was created as an in-house tool with help from AI. Test coverage and manual QA are still limited, so treat the application as experimental and keep backups of important Markdown files.
