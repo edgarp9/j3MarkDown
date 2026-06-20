@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": ".test-output",
+    "rootDir": ".",
+    "sourceMap": false
+  },
+  "include": [
+    "src/app/document-state.ts",
+    "src/app/save-queue.ts",
+    "src/app/window-close-guard.ts"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "j3markdown",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check": "pnpm typecheck && pnpm licenses:check",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "pnpm test:unit && pnpm test:unsaved && pnpm test:flow",
+    "test:unit": "tsc -p tsconfig.test.json && node --test tests/document-state.test.mjs tests/window-close-guard.test.mjs",
+    "test:state": "tsc -p tsconfig.test.json && node --test tests/document-state.test.mjs",
+    "test:window-close": "tsc -p tsconfig.test.json && node --test tests/window-close-guard.test.mjs",
+    "test:unsaved": "node tests/unsaved-protection.e2e.mjs",
+    "test:flow": "node tests/markdown-user-flow.e2e.mjs",
+    "typecheck": "tsc --noEmit",
+    "licenses:generate": "node scripts/generate-third-party-notices.mjs",
+    "licenses:check": "node scripts/generate-third-party-notices.mjs --check",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "pnpm licenses:check && tauri build"
+  },
+  "dependencies": {
+    "@milkdown/crepe": "7.21.2",
+    "@milkdown/kit": "7.21.2",
+    "@milkdown/theme-nord": "7.21.2",
+    "@tauri-apps/api": "^2.11.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.3",
+    "playwright-core": "^1.61.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
+  }
+}

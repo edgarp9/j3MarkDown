@@ -1,0 +1,648 @@
+:root {
+  color: #1f2933;
+  background: #f3f4f6;
+  font-family:
+    "Segoe UI",
+    "Malgun Gothic",
+    system-ui,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: 48px 40px minmax(0, 1fr) 28px;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 600px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+#app.is-file-drag-over .app-shell {
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  border-bottom: 1px solid #cfd6df;
+  background: #ffffff;
+}
+
+.toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar__right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar__settings {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar__setting-label {
+  flex: 0 0 auto;
+  color: #425066;
+}
+
+.toolbar__setting-select {
+  height: 30px;
+  padding: 3px 28px 3px 8px;
+  border: 1px solid #b9c3cf;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+}
+
+.toolbar__theme-select {
+  width: 122px;
+}
+
+.toolbar__language-select {
+  width: 104px;
+}
+
+.toolbar__button,
+.primary-button,
+.secondary-button,
+.danger-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #b9c3cf;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar__button:hover,
+.secondary-button:hover {
+  background: #eef2f6;
+}
+
+.toolbar__button:disabled {
+  color: #8994a3;
+  cursor: default;
+  background: #f6f7f9;
+}
+
+.app-shell[data-editor-theme-mode="dark"] {
+  background: #181b20;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .toolbar {
+  border-bottom-color: #353b45;
+  background: #20242b;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .toolbar__button,
+.app-shell[data-editor-theme-mode="dark"] .toolbar__setting-select {
+  color: #e6e9ef;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .toolbar__setting-label {
+  color: #b7beca;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .toolbar__button,
+.app-shell[data-editor-theme-mode="dark"] .toolbar__setting-select {
+  border-color: #4a5260;
+  background: #2a3039;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .toolbar__button:hover,
+.app-shell[data-editor-theme-mode="dark"] .secondary-button:hover {
+  background: #343b46;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .toolbar__button:disabled {
+  color: #7f8794;
+  background: #262b33;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar {
+  border-bottom-color: #353b45;
+  background: #1f242c;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar__item {
+  border-color: #434b59;
+  background: #2a3039;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar__tab {
+  color: #dbe1ea;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar__tab.is-active {
+  color: #f2f5f8;
+  background: #1a1d22;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar__tab.is-dirty {
+  color: #f8b88b;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar__close {
+  color: #a9b2bf;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar__close:hover {
+  color: #f2f5f8;
+  background: #353d49;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .tab-bar__tooltip {
+  border-color: #4a5260;
+  color: #edf2f7;
+  background: #242a33;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 34%);
+}
+
+.app-shell[data-editor-theme-mode="dark"] .editor-host {
+  background: #1a1a1a;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .status-bar {
+  border-top-color: #353b45;
+  color: #b8c0cc;
+  background: #20242b;
+}
+
+.app-shell[data-editor-theme-mode="dark"] .status-bar__item {
+  border-right-color: #353b45;
+}
+
+.primary-button {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.danger-button {
+  border-color: #b42318;
+  background: #b42318;
+  color: #ffffff;
+}
+
+.tab-bar {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 40px;
+  min-width: 0;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid #cfd6df;
+  background: #e8edf3;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.tab-bar__item {
+  display: flex;
+  flex: 0 1 240px;
+  align-items: stretch;
+  min-width: 128px;
+  max-width: 240px;
+  height: 34px;
+  border: 1px solid #c2ccd8;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: #f3f6fa;
+  overflow: hidden;
+}
+
+.tab-bar__tab {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1f2937;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tab-bar__tab.is-active {
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.tab-bar__tab.is-dirty {
+  color: #7c2d12;
+}
+
+.tab-bar__close {
+  flex: 0 0 30px;
+  overflow: hidden;
+  color: #526173;
+  text-overflow: clip;
+  white-space: nowrap;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tab-bar__close:hover {
+  background: #dfe5ec;
+  color: #0f172a;
+}
+
+.tab-bar__tooltip {
+  position: fixed;
+  z-index: 60;
+  max-width: min(520px, calc(100vw - 16px));
+  padding: 6px 8px;
+  border: 1px solid #aeb9c7;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 18%);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  text-align: left;
+  white-space: normal;
+}
+
+.tab-bar__tooltip[hidden] {
+  display: none;
+}
+
+.editor-host {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  background: #ffffff;
+}
+
+.markdown-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--crepe-color-on-background, #111827);
+  background: var(--crepe-color-background, #ffffff);
+  overflow: auto;
+  font-family:
+    "Segoe UI",
+    "Malgun Gothic",
+    system-ui,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.markdown-editor[data-editor-theme-mode="dark"] {
+  color: var(--crepe-color-on-background, #e6e6e6);
+  background: var(--crepe-color-background, #1a1a1a);
+}
+
+.markdown-editor .milkdown,
+.markdown-editor .milkdown .editor,
+.markdown-editor .ProseMirror {
+  min-height: 100%;
+}
+
+.markdown-editor .milkdown {
+  color: var(--crepe-color-on-background, #111827);
+  background: var(--crepe-color-background, #ffffff);
+}
+
+.markdown-editor .ProseMirror {
+  max-width: 960px;
+  padding: 24px 56px 56px 88px;
+  outline: none;
+  color: var(--crepe-color-on-background, #111827);
+}
+
+.markdown-editor .ProseMirror > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-editor .ProseMirror h1,
+.markdown-editor .ProseMirror h2,
+.markdown-editor .ProseMirror h3 {
+  margin: 1.2em 0 0.45em;
+  line-height: 1.25;
+  color: var(--crepe-color-on-background, #111827);
+}
+
+.markdown-editor .ProseMirror h1 {
+  font-size: 26px;
+}
+
+.markdown-editor .ProseMirror h2 {
+  font-size: 21px;
+}
+
+.markdown-editor .ProseMirror h3 {
+  font-size: 17px;
+}
+
+.markdown-editor .ProseMirror p,
+.markdown-editor .ProseMirror ul,
+.markdown-editor .ProseMirror ol,
+.markdown-editor .ProseMirror blockquote,
+.markdown-editor .ProseMirror pre {
+  margin: 0 0 0.85em;
+}
+
+.markdown-editor .ProseMirror blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--crepe-color-outline, #c7d2df);
+  color: var(--crepe-color-on-surface-variant, #4b5563);
+}
+
+.markdown-editor .ProseMirror code,
+.markdown-editor .ProseMirror pre {
+  font-family:
+    "Cascadia Mono",
+    "D2Coding",
+    Consolas,
+    monospace;
+}
+
+.markdown-editor .ProseMirror pre {
+  padding: 12px;
+  border: 1px solid var(--crepe-color-outline, #d7dee7);
+  border-radius: 6px;
+  color: var(--crepe-color-on-surface, #111827);
+  background: var(--crepe-color-surface, #f6f8fb);
+  overflow: auto;
+}
+
+.markdown-editor--error::before {
+  display: block;
+  padding: 24px 30px;
+  color: #9f1239;
+  content: attr(data-error-label);
+}
+
+.editor-context-menu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  min-width: 220px;
+  max-width: min(300px, calc(100vw - 12px));
+  padding: 6px;
+  border: 1px solid #aeb9c7;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+  box-shadow: 0 14px 36px rgb(15 23 42 / 18%);
+}
+
+.editor-context-menu:focus {
+  outline: none;
+}
+
+.editor-context-menu__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.editor-context-menu__item:hover,
+.editor-context-menu__item:focus {
+  background: #e8f0fe;
+  outline: none;
+}
+
+.editor-context-menu__item:disabled {
+  color: #8994a3;
+  cursor: default;
+  background: transparent;
+}
+
+.editor-context-menu__label,
+.editor-context-menu__shortcut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-context-menu__shortcut {
+  color: #687386;
+  font-size: 12px;
+}
+
+.editor-context-menu__separator {
+  height: 1px;
+  margin: 5px 2px;
+  background: #d7dee7;
+}
+
+.editor-context-menu[data-editor-theme-mode="dark"] {
+  border-color: #4a5260;
+  color: #e6e9ef;
+  background: #242a33;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 32%);
+}
+
+.editor-context-menu[data-editor-theme-mode="dark"] .editor-context-menu__item:hover,
+.editor-context-menu[data-editor-theme-mode="dark"] .editor-context-menu__item:focus {
+  background: #374151;
+}
+
+.editor-context-menu[data-editor-theme-mode="dark"] .editor-context-menu__item:disabled {
+  color: #7f8794;
+}
+
+.editor-context-menu[data-editor-theme-mode="dark"] .editor-context-menu__shortcut {
+  color: #aab3c2;
+}
+
+.editor-context-menu[data-editor-theme-mode="dark"] .editor-context-menu__separator {
+  background: #424a57;
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  padding: 0 10px;
+  border-top: 1px solid #cfd6df;
+  background: #eef2f6;
+  color: #3c4656;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.status-bar__item {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 240px;
+  height: 100%;
+  padding: 0 10px;
+  border-right: 1px solid #d7dee7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-dialog {
+  max-width: min(420px, calc(100vw - 48px));
+  padding: 0;
+  border: 1px solid #aab5c3;
+  border-radius: 8px;
+  color: #1f2937;
+  background: #ffffff;
+  box-shadow: 0 22px 60px rgb(15 23 42 / 24%);
+}
+
+.modal-dialog::backdrop {
+  background: rgb(15 23 42 / 38%);
+}
+
+.modal-dialog--about {
+  width: min(720px, calc(100vw - 48px));
+  max-width: min(720px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+}
+
+.modal-dialog__body {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.modal-dialog__body h2,
+.modal-dialog__body p {
+  margin: 0;
+}
+
+.modal-dialog__body p {
+  overflow-wrap: anywhere;
+}
+
+.modal-dialog__body h2 {
+  font-size: 17px;
+}
+
+.modal-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.modal-dialog__link {
+  min-width: 0;
+  color: #1d4ed8;
+  overflow-wrap: anywhere;
+}
+
+.modal-dialog__link:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.modal-dialog__license-details {
+  min-width: 0;
+}
+
+.modal-dialog__license-summary {
+  cursor: pointer;
+  color: #1d4ed8;
+}
+
+.modal-dialog__license-summary:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.modal-dialog__license-description {
+  margin-top: 10px;
+  color: #4b5563;
+}
+
+.modal-dialog__license-text {
+  max-height: min(46vh, 360px);
+  margin: 10px 0 0;
+  padding: 10px;
+  border: 1px solid #d2dae5;
+  border-radius: 6px;
+  color: #111827;
+  background: #f8fafc;
+  font-family:
+    "Cascadia Mono",
+    "D2Coding",
+    Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: auto;
+  overflow-wrap: normal;
+  white-space: pre-wrap;
+}
+
+.modal-dialog__license-text:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
