@@ -81,11 +81,7 @@ export interface AppCopy {
     ) => string;
     readonly aboutTitle: string;
     readonly aboutVersion: (version: string) => string;
-    readonly aboutLicenses: string;
-    readonly aboutLicensesDescription: string;
-    readonly aboutLicensesTextLabel: string;
-    readonly aboutLicensesLoading: string;
-    readonly aboutLicensesLoadFailed: string;
+    readonly aboutTextLoadFailed: (version: string, sourceUrl: string) => string;
   };
   readonly errors: {
     readonly openFailed: string;
@@ -200,12 +196,8 @@ const appCopy = {
       },
       aboutTitle: "About j3Markdown",
       aboutVersion: (version) => `Version ${version}`,
-      aboutLicenses: "Open Source Licenses",
-      aboutLicensesDescription:
-        "Third-party dependency notices included with this app.",
-      aboutLicensesTextLabel: "Third-party dependency notices",
-      aboutLicensesLoading: "Loading notices...",
-      aboutLicensesLoadFailed: "Could not load third-party notices.",
+      aboutTextLoadFailed: (version, sourceUrl) =>
+        `j3Markdown\n\nVersion: ${version}\nSource code for this release:\n${sourceUrl}\n\nCould not load about.txt from the bundled application resources.`,
     },
     errors: {
       openFailed: "Open Failed",
@@ -311,12 +303,8 @@ const appCopy = {
       },
       aboutTitle: "j3Markdown 정보",
       aboutVersion: (version) => `버전 ${version}`,
-      aboutLicenses: "오픈소스 라이선스",
-      aboutLicensesDescription:
-        "이 앱에 포함된 타사 의존성 고지입니다.",
-      aboutLicensesTextLabel: "타사 의존성 고지",
-      aboutLicensesLoading: "고지를 불러오는 중...",
-      aboutLicensesLoadFailed: "타사 고지를 불러올 수 없습니다.",
+      aboutTextLoadFailed: (version, sourceUrl) =>
+        `j3Markdown\n\n버전 ${version}\n이 릴리스의 소스 코드:\n${sourceUrl}\n\n앱에 포함된 about.txt를 불러올 수 없습니다.`,
     },
     errors: {
       openFailed: "열기 실패",

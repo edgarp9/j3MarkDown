@@ -109,7 +109,7 @@ This document is the canonical source for UI behavior. `docs/canonical-sources.m
 
 - Popup workflows used for confirmation, unsupported file feedback, open/save choices, or tab close decisions must be modal.
 - Native Markdown file dialogs for Open and Save As, including Save on an untitled document, must be owned by the main app window so Windows presents them centered over that window.
-- The About dialog must be modal, show the app version, and include `https://github.com/edgarp9` at the bottom.
+- The About dialog must be modal, show the app version, display the bundled `about.txt` content, and include `https://github.com/edgarp9` at the bottom.
 - Activating the About dialog's `https://github.com/edgarp9` link must open that URL in the user's default browser through a desktop app command.
 
 ## Unsaved Change Protection

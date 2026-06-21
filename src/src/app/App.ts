@@ -1,13 +1,14 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   EditorContextMenu,
   type EditorContextMenuEntry,
 } from "../components/EditorContextMenu";
-import {
-  MarkdownEditor,
-  type MarkdownEditorChange,
-  type MarkdownEditorContextCommand,
-  type MarkdownEditorHandle,
-  type MarkdownEditorScrollPosition,
+import type {
+  MarkdownEditorChange,
+  MarkdownEditorContextCommand,
+  MarkdownEditorHandle,
+  MarkdownEditorProps,
+  MarkdownEditorScrollPosition,
 } from "../components/MarkdownEditor";
 import { TabBar } from "../components/TabBar";
 import {
@@ -86,7 +87,7 @@ import {
   type AppCopy,
   type UiLanguage,
 } from "./i18n";
-import { getThirdPartyNoticesText } from "./license-notices";
+import { getAboutText } from "./about-text";
 import { DebouncedLatestSave, PerKeySaveQueue } from "./save-queue";
 import {
   startCurrentWindowCloseGuard,
@@ -161,12 +162,15 @@ type DetachedWindowHandoffMessage =
   | DetachedWindowHandoffRequestMessage
   | DetachedWindowHandoffResponseMessage
   | DetachedWindowHandoffConsumedMessage;
+type MarkdownEditorFactory = (props: MarkdownEditorProps) => MarkdownEditorHandle;
 
 export class MarkdownApp {
   private readonly tabs: EditorTab[] = [createUntitledTab()];
   private activeTabId: string = this.tabs[0].id;
   private markdownEditor: MarkdownEditorHandle | null = null;
   private readonly markdownEditors = new Map<string, MarkdownEditorHandle>();
+  private markdownEditorFactory: MarkdownEditorFactory | null = null;
+  private markdownEditorFactoryLoad: Promise<MarkdownEditorFactory> | null = null;
   private readonly markdownEditorScrollPositions = new Map<
     string,
     MarkdownEditorScrollPosition
@@ -178,6 +182,7 @@ export class MarkdownApp {
   private readonly markdownFileSaveQueue = new PerKeySaveQueue<SaveTabResult>("failed");
   private readonly pendingTabSaves = new Map<string, Promise<SaveTabResult>>();
   private readonly pendingTabCloseRequests = new Set<string>();
+  private readonly pendingEditorContentChangeTabIds = new Set<string>();
   private isFileDragOver = false;
   private editorThemeId: MarkdownEditorThemeId = defaultMarkdownEditorThemeId;
   private uiLanguage: UiLanguage = defaultUiLanguage;
@@ -191,6 +196,7 @@ export class MarkdownApp {
   private editorContextMenuElement: HTMLElement | null = null;
   private tabContextMenuElement: HTMLElement | null = null;
   private pendingWindowCloseGuardRegistrationError: unknown = null;
+  private hasRequestedInitialWindowShow = false;
   private readonly activeDocumentStatsCache = new Map<string, ActiveDocumentStatsCache>();
   private activeDocumentStatsUpdateTimer: number | null = null;
   private activeDocumentStatsIdleCallback: number | null = null;
@@ -291,6 +297,7 @@ export class MarkdownApp {
     this.pendingWindowCloseGuardRegistrationError = null;
     this.destroyMarkdownEditors();
     this.markdownEditor = null;
+    this.clearAllPendingEditorContentChanges();
     this.toolbarElement = null;
     this.tabBarElement = null;
     this.statusBarElement = null;
@@ -308,13 +315,13 @@ export class MarkdownApp {
     this.cancelActiveDocumentStatsRefresh();
 
     const activeTab = this.getActiveTab();
-    this.markdownEditor = this.getOrCreateMarkdownEditor(activeTab);
+    const editorElement = this.getOrCreateMarkdownEditorElement(activeTab);
     this.pruneMarkdownEditorCache(activeTab.id);
     this.pruneActiveDocumentStatsCache(activeTab.id);
 
     const shell = createAppShell({
       ...this.getAppChromeOptions(activeTab),
-      editorElement: this.markdownEditor.element,
+      editorElement,
     });
 
     this.toolbarElement = shell.toolbarElement;
@@ -323,6 +330,20 @@ export class MarkdownApp {
 
     this.root.replaceChildren(shell.shellElement);
     this.restoreMarkdownEditorScrollPosition(activeTab.id);
+    this.showWindowAfterInitialRender();
+  }
+
+  private showWindowAfterInitialRender(): void {
+    if (this.hasRequestedInitialWindowShow) {
+      return;
+    }
+
+    this.hasRequestedInitialWindowShow = true;
+    void getCurrentWindow()
+      .show()
+      .catch((error: unknown) => {
+        console.warn("App window could not be shown after initial render.", error);
+      });
   }
 
   private async handleToolbarAction(action: ToolbarAction): Promise<void> {
@@ -982,7 +1003,7 @@ export class MarkdownApp {
     }
 
     this.flushPendingMarkdownEditorChange(tab.id);
-    this.completeSavedMarkdownComparisonBeforeClose(tab);
+    await this.completeSavedMarkdownComparisonBeforeClose(tab);
     this.updateTabButton(tab);
     if (tab.id === this.activeTabId) {
       this.updateActiveDocumentChrome(tab);
@@ -1264,8 +1285,7 @@ export class MarkdownApp {
     }
 
     replaceTabWithOpenedMarkdownDocument(tab, file);
-    this.destroyMarkdownEditor(tab.id, { flushPendingMarkdown: false });
-    this.markdownEditorScrollPositions.delete(tab.id);
+    this.discardMarkdownEditorState(tab.id);
 
     if (this.activeTabId === tab.id) {
       this.renderTabChange();
@@ -1295,6 +1315,7 @@ export class MarkdownApp {
       { protectedTabIds: options.protectedTabIds },
     );
     this.activateTab(result.activeTabId);
+    this.clearPendingEditorContentChange(result.tab.id);
     return true;
   }
 
@@ -1350,8 +1371,7 @@ export class MarkdownApp {
     this.activeTabId = result.activeTabId;
 
     if (!result.reusedExistingTab) {
-      this.destroyMarkdownEditor(result.tab.id);
-      this.markdownEditorScrollPositions.delete(result.tab.id);
+      this.discardMarkdownEditorState(result.tab.id);
     }
 
     return result;
@@ -1393,6 +1413,7 @@ export class MarkdownApp {
     const previousContentVersion = previousTab ? getTabContentVersion(previousTab) : null;
     const previousDisplayTitle = previousTab ? getTabDisplayTitle(previousTab) : null;
     const previousMarkdown = previousTab?.markdown ?? null;
+    this.clearPendingEditorContentChange(tabId);
     const previousStats =
       previousTab && previousContentVersion !== null
         ? this.getFreshActiveDocumentStats(previousTab.id, previousContentVersion)
@@ -1413,9 +1434,10 @@ export class MarkdownApp {
       return;
     }
 
+    const isKnownContentChange = previousMarkdown === null || previousMarkdown !== content;
     const tab = updateTabMarkdownById(this.tabs, tabId, content, {
-      isKnownContentChange: true,
-      knownChangedIndex: change.knownChangedIndex,
+      isKnownContentChange,
+      knownChangedIndex: isKnownContentChange ? change.knownChangedIndex : undefined,
       deferSavedMarkdownComparison: true,
     });
 
@@ -1475,6 +1497,7 @@ export class MarkdownApp {
     }
 
     const previousDisplayTitle = getTabDisplayTitle(tab);
+    this.markPendingEditorContentChange(tab.id);
     tab.dirty = true;
     tab.updatedAt = new Date();
 
@@ -1560,51 +1583,49 @@ export class MarkdownApp {
     this.copy = getAppCopy(languageId);
   }
 
-  private async loadPersistedEditorTheme(
+  private async loadPersistedAppSettings(
     lifecycleVersion: number,
     themeSettingVersion: number,
-  ): Promise<void> {
-    const themeId = await loadEditorThemeSetting();
-
-    if (
-      this.lifecycleVersion !== lifecycleVersion ||
-      this.editorThemeSettingVersion !== themeSettingVersion ||
-      this.editorThemeId === themeId
-    ) {
-      return;
-    }
-
-    this.editorThemeId = themeId;
-    this.editorThemeSettingVersion += 1;
-
-    if (!this.toolbarElement && this.markdownEditors.size === 0) {
-      return;
-    }
-
-    this.destroyMarkdownEditors();
-    this.render();
-  }
-
-  private async loadPersistedUiLanguage(
-    lifecycleVersion: number,
     languageSettingVersion: number,
   ): Promise<void> {
-    const languageId = await loadUiLanguageSetting();
+    const [languageId, themeId] = await Promise.all([
+      loadUiLanguageSetting(),
+      loadEditorThemeSetting(),
+    ]);
 
-    if (
-      this.lifecycleVersion !== lifecycleVersion ||
-      this.uiLanguageSettingVersion !== languageSettingVersion ||
-      this.uiLanguage === languageId
-    ) {
+    if (this.lifecycleVersion !== lifecycleVersion) {
       return;
     }
 
-    this.applyUiLanguage(languageId);
-    this.uiLanguageSettingVersion += 1;
-    this.updateMarkdownEditorCopy();
+    let shouldRender = false;
+    let shouldRecreateEditors = false;
 
-    if (!this.toolbarElement && this.markdownEditors.size === 0) {
+    if (
+      this.uiLanguageSettingVersion === languageSettingVersion &&
+      this.uiLanguage !== languageId
+    ) {
+      this.applyUiLanguage(languageId);
+      this.uiLanguageSettingVersion += 1;
+      this.updateMarkdownEditorCopy();
+      shouldRender = true;
+    }
+
+    if (
+      this.editorThemeSettingVersion === themeSettingVersion &&
+      this.editorThemeId !== themeId
+    ) {
+      this.editorThemeId = themeId;
+      this.editorThemeSettingVersion += 1;
+      shouldRecreateEditors = true;
+      shouldRender = true;
+    }
+
+    if (!shouldRender) {
       return;
+    }
+
+    if (shouldRecreateEditors) {
+      this.destroyMarkdownEditors();
     }
 
     this.render();
@@ -1616,8 +1637,15 @@ export class MarkdownApp {
     languageSettingVersion: number,
   ): Promise<void> {
     try {
-      await this.loadPersistedUiLanguage(lifecycleVersion, languageSettingVersion);
-      await this.loadPersistedEditorTheme(lifecycleVersion, themeSettingVersion);
+      if (!this.toolbarElement) {
+        this.render();
+      }
+
+      await this.loadPersistedAppSettings(
+        lifecycleVersion,
+        themeSettingVersion,
+        languageSettingVersion,
+      );
       if (this.lifecycleVersion !== lifecycleVersion) {
         return;
       }
@@ -1636,7 +1664,19 @@ export class MarkdownApp {
     }
   }
 
-  private getOrCreateMarkdownEditor(tab: EditorTab): MarkdownEditorHandle {
+  private getOrCreateMarkdownEditorElement(tab: EditorTab): HTMLElement {
+    const editor = this.getOrCreateMarkdownEditor(tab);
+
+    if (editor) {
+      this.markdownEditor = editor;
+      return editor.element;
+    }
+
+    this.markdownEditor = null;
+    return this.createPendingMarkdownEditorElement(tab);
+  }
+
+  private getOrCreateMarkdownEditor(tab: EditorTab): MarkdownEditorHandle | null {
     const existingEditor = this.markdownEditors.get(tab.id);
 
     if (existingEditor) {
@@ -1645,7 +1685,13 @@ export class MarkdownApp {
       return existingEditor;
     }
 
-    const editor = MarkdownEditor({
+    const markdownEditorFactory = this.markdownEditorFactory;
+    if (!markdownEditorFactory) {
+      this.ensureMarkdownEditorFactoryLoad();
+      return null;
+    }
+
+    const editor = markdownEditorFactory({
       tab,
       themeId: this.editorThemeId,
       copy: this.copy.editor,
@@ -1659,6 +1705,8 @@ export class MarkdownApp {
   private showActiveMarkdownEditor(activeTab: EditorTab): boolean {
     const nextEditor = this.getOrCreateMarkdownEditor(activeTab);
     const currentEditorElement = this.root.querySelector<HTMLElement>("[data-region='editor']");
+    const nextEditorElement =
+      nextEditor?.element ?? this.createPendingMarkdownEditorElement(activeTab);
 
     this.markdownEditor = nextEditor;
     this.pruneActiveDocumentStatsCache(activeTab.id);
@@ -1668,13 +1716,84 @@ export class MarkdownApp {
       return false;
     }
 
-    if (currentEditorElement !== nextEditor.element) {
-      currentEditorElement.replaceWith(nextEditor.element);
+    if (currentEditorElement !== nextEditorElement) {
+      currentEditorElement.replaceWith(nextEditorElement);
     }
 
     this.pruneMarkdownEditorCache(activeTab.id);
-    this.restoreMarkdownEditorScrollPosition(activeTab.id);
+    if (nextEditor) {
+      this.restoreMarkdownEditorScrollPosition(activeTab.id);
+    }
     return true;
+  }
+
+  private createPendingMarkdownEditorElement(tab: EditorTab): HTMLElement {
+    const theme = getMarkdownEditorTheme(this.editorThemeId);
+    const editorHost = document.createElement("section");
+    editorHost.className = "editor-host";
+    editorHost.setAttribute("data-region", "editor");
+    editorHost.dataset.editorTabId = tab.id;
+
+    const editorMount = document.createElement("div");
+    editorMount.className = "markdown-editor markdown-editor--pending";
+    editorMount.setAttribute("aria-label", this.copy.editor.ariaLabel);
+    editorMount.dataset.errorLabel = this.copy.editor.errorLabel;
+    editorMount.dataset.editorTabId = tab.id;
+    editorMount.dataset.editorThemeId = theme.id;
+    editorMount.dataset.editorThemeMode = theme.isDark ? "dark" : "light";
+
+    editorHost.append(editorMount);
+    this.ensureMarkdownEditorFactoryLoad();
+
+    return editorHost;
+  }
+
+  private ensureMarkdownEditorFactoryLoad(): void {
+    if (this.markdownEditorFactory || this.markdownEditorFactoryLoad) {
+      return;
+    }
+
+    const lifecycleVersion = this.lifecycleVersion;
+    this.markdownEditorFactoryLoad = import("../components/MarkdownEditor").then(
+      (module) => module.MarkdownEditor,
+    );
+
+    void this.markdownEditorFactoryLoad
+      .then((markdownEditorFactory) => {
+        this.markdownEditorFactory = markdownEditorFactory;
+        this.markdownEditorFactoryLoad = null;
+
+        if (this.lifecycleVersion !== lifecycleVersion) {
+          return;
+        }
+
+        this.showLoadedMarkdownEditorForActiveTab();
+      })
+      .catch((error: unknown) => {
+        this.markdownEditorFactoryLoad = null;
+        console.error("Markdown editor module could not be loaded.", error);
+
+        if (this.lifecycleVersion !== lifecycleVersion) {
+          return;
+        }
+
+        const currentEditorElement =
+          this.root.querySelector<HTMLElement>("[data-region='editor']");
+        currentEditorElement
+          ?.querySelector<HTMLElement>(".markdown-editor")
+          ?.classList.add("markdown-editor--error");
+        this.showErrorDialog(this.copy.errors.editFailed, this.getErrorMessage(error));
+      });
+  }
+
+  private showLoadedMarkdownEditorForActiveTab(): void {
+    const currentEditorElement = this.root.querySelector<HTMLElement>("[data-region='editor']");
+
+    if (!currentEditorElement) {
+      return;
+    }
+
+    this.showActiveMarkdownEditor(this.getActiveTab());
   }
 
   private destroyMarkdownEditor(
@@ -1708,19 +1827,63 @@ export class MarkdownApp {
     }
   }
 
+  private discardMarkdownEditorState(tabId: string): void {
+    this.destroyMarkdownEditor(tabId, { flushPendingMarkdown: false });
+    this.clearPendingEditorContentChange(tabId);
+    this.markdownEditorScrollPositions.delete(tabId);
+  }
+
+  private markPendingEditorContentChange(tabId: string): void {
+    this.pendingEditorContentChangeTabIds.add(tabId);
+  }
+
+  private clearPendingEditorContentChange(tabId: string): void {
+    this.pendingEditorContentChangeTabIds.delete(tabId);
+  }
+
+  private clearAllPendingEditorContentChanges(): void {
+    this.pendingEditorContentChangeTabIds.clear();
+  }
+
+  private hasPendingEditorContentChange(tabId: string): boolean {
+    return this.pendingEditorContentChangeTabIds.has(tabId);
+  }
+
   private flushPendingMarkdownEditorChange(
     tabId: string,
     options: { requireSerializedMarkdown?: boolean } = {},
   ): void {
-    this.markdownEditors.get(tabId)?.flushPendingMarkdownChange?.(options);
+    const editor = this.markdownEditors.get(tabId);
+    if (!editor) {
+      return;
+    }
+
+    editor.flushPendingMarkdownChange?.({
+      requireSerializedMarkdown: this.shouldRequireSerializedMarkdownFlush(tabId, options),
+    });
   }
 
   private flushPendingMarkdownEditorChanges(
     options: { requireSerializedMarkdown?: boolean } = {},
   ): void {
-    for (const editor of this.markdownEditors.values()) {
-      editor.flushPendingMarkdownChange?.(options);
+    for (const [tabId, editor] of this.markdownEditors) {
+      editor.flushPendingMarkdownChange?.({
+        requireSerializedMarkdown: this.shouldRequireSerializedMarkdownFlush(
+          tabId,
+          options,
+        ),
+      });
     }
+  }
+
+  private shouldRequireSerializedMarkdownFlush(
+    tabId: string,
+    options: { requireSerializedMarkdown?: boolean },
+  ): boolean {
+    return (
+      options.requireSerializedMarkdown !== false ||
+      this.hasPendingEditorContentChange(tabId)
+    );
   }
 
   private activateTab(tabId: string): void {
@@ -2329,13 +2492,13 @@ export class MarkdownApp {
     }
   }
 
-  private completeSavedMarkdownComparisonBeforeClose(tab: EditorTab): void {
+  private async completeSavedMarkdownComparisonBeforeClose(tab: EditorTab): Promise<void> {
     if (!this.isOpenTabInstance(tab) || !hasPendingSavedMarkdownComparison(tab)) {
       return;
     }
 
     if (!canCompletePendingSavedMarkdownComparisonSynchronously(tab)) {
-      this.ensureSavedMarkdownComparison(tab);
+      await this.completeDeferredSavedMarkdownComparisonBeforeClose(tab);
       return;
     }
 
@@ -2354,6 +2517,30 @@ export class MarkdownApp {
 
     if (tab.id === this.activeTabId) {
       this.scheduleActiveDocumentChromeUpdate();
+    }
+  }
+
+  private async completeDeferredSavedMarkdownComparisonBeforeClose(
+    tab: EditorTab,
+  ): Promise<void> {
+    this.cancelSavedMarkdownComparisonQueue();
+    this.ensureSavedMarkdownComparisonScan(tab);
+
+    while (this.isOpenTabInstance(tab) && hasPendingSavedMarkdownComparison(tab)) {
+      const scan = this.savedMarkdownComparisonScan;
+      if (
+        !scan ||
+        scan.tabId !== tab.id ||
+        scan.contentVersion !== getTabContentVersion(tab)
+      ) {
+        this.ensureSavedMarkdownComparisonScan(tab);
+      }
+
+      if (this.advanceSavedMarkdownComparisonScan()) {
+        return;
+      }
+
+      await waitForNextSavedMarkdownComparisonChunk();
     }
   }
 
@@ -2435,7 +2622,7 @@ export class MarkdownApp {
       this.flushPendingMarkdownEditorChange(tab.id, {
         requireSerializedMarkdown: false,
       });
-      this.completeSavedMarkdownComparisonBeforeClose(tab);
+      await this.completeSavedMarkdownComparisonBeforeClose(tab);
 
       let shouldFlushPendingMarkdownOnClose = true;
       if (tab.dirty) {
@@ -2490,7 +2677,7 @@ export class MarkdownApp {
         continue;
       }
 
-      this.completeSavedMarkdownComparisonBeforeClose(dirtyTab);
+      await this.completeSavedMarkdownComparisonBeforeClose(dirtyTab);
 
       if (!dirtyTab.dirty) {
         this.render();
@@ -2531,8 +2718,7 @@ export class MarkdownApp {
     }
 
     if (this.tabs.length === 1) {
-      this.destroyMarkdownEditor(tabId, { flushPendingMarkdown: false });
-      this.markdownEditorScrollPositions.delete(tabId);
+      this.discardMarkdownEditorState(tabId);
       const replacement = createUntitledTab();
       this.tabs.splice(0, 1, replacement);
       this.activeTabId = replacement.id;
@@ -2545,9 +2731,8 @@ export class MarkdownApp {
       return;
     }
 
-    this.destroyMarkdownEditor(tabId, { flushPendingMarkdown: false });
+    this.discardMarkdownEditorState(tabId);
     this.tabs.splice(tabIndex, 1);
-    this.markdownEditorScrollPositions.delete(tabId);
     if (this.activeTabId === tabId) {
       this.activeTabId = this.tabs[Math.max(0, tabIndex - 1)].id;
     }
@@ -2757,6 +2942,14 @@ export class MarkdownApp {
 
   private async showAboutDialog(): Promise<void> {
     const aboutInfo = await getAboutInfo();
+    const aboutText = await getAboutText().catch((error: unknown) => {
+      console.error("Failed to load about.txt.", error);
+
+      return this.copy.dialogs.aboutTextLoadFailed(
+        aboutInfo.version,
+        aboutInfo.githubUrl,
+      );
+    });
     const dialog = document.createElement("dialog");
     const dialogId = nextDialogElementId("about-dialog");
     const headingId = `${dialogId}-heading`;
@@ -2777,55 +2970,14 @@ export class MarkdownApp {
     heading.textContent = this.copy.dialogs.aboutTitle;
 
     const version = document.createElement("p");
-    version.id = bodyId;
     version.className = "modal-dialog__version";
     version.textContent = this.copy.dialogs.aboutVersion(aboutInfo.version);
 
-    const licenseDetails = document.createElement("details");
-    licenseDetails.className = "modal-dialog__license-details";
-
-    const licenseSummary = document.createElement("summary");
-    licenseSummary.className = "modal-dialog__license-summary";
-    licenseSummary.textContent = this.copy.dialogs.aboutLicenses;
-
-    const licenseDescription = document.createElement("p");
-    licenseDescription.className = "modal-dialog__license-description";
-    licenseDescription.textContent = this.copy.dialogs.aboutLicensesDescription;
-
-    const licenseText = document.createElement("pre");
-    licenseText.className = "modal-dialog__license-text";
-    licenseText.tabIndex = 0;
-    licenseText.setAttribute("aria-label", this.copy.dialogs.aboutLicensesTextLabel);
-
-    let licenseTextLoad: Promise<string> | null = null;
-    licenseDetails.addEventListener("toggle", () => {
-      if (!licenseDetails.open || licenseText.dataset.loaded === "true") {
-        return;
-      }
-
-      licenseText.textContent = this.copy.dialogs.aboutLicensesLoading;
-      licenseTextLoad ??= getThirdPartyNoticesText();
-      void licenseTextLoad
-        .then((notices) => {
-          if (!dialog.isConnected) {
-            return;
-          }
-
-          licenseText.dataset.loaded = "true";
-          licenseText.textContent = notices;
-        })
-        .catch((error: unknown) => {
-          console.error("Failed to load third-party notices.", error);
-
-          if (!dialog.isConnected) {
-            return;
-          }
-
-          licenseText.textContent = this.copy.dialogs.aboutLicensesLoadFailed;
-        });
-    });
-
-    licenseDetails.append(licenseSummary, licenseDescription, licenseText);
+    const aboutContent = document.createElement("pre");
+    aboutContent.id = bodyId;
+    aboutContent.className = "modal-dialog__about-text";
+    aboutContent.tabIndex = 0;
+    aboutContent.textContent = aboutText;
 
     const footer = document.createElement("div");
     footer.className = "modal-dialog__footer";
@@ -2862,7 +3014,7 @@ export class MarkdownApp {
 
     actions.append(closeButton);
     footer.append(link, actions);
-    form.append(heading, version, licenseDetails, footer);
+    form.append(heading, version, aboutContent, footer);
     dialog.append(form);
     this.root.append(dialog);
     dialog.addEventListener("cancel", (event) => {
@@ -3006,6 +3158,12 @@ function nextDialogElementId(prefix: string): string {
   const id = `${prefix}-${nextDialogId}`;
   nextDialogId += 1;
   return id;
+}
+
+function waitForNextSavedMarkdownComparisonChunk(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
 }
 
 function getUnsavedChangeDecision(value: string): UnsavedChangeDecision {

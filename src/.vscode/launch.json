@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Run j3Markdown",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\start-vscode-tauri-dev.ps1\"",
+      "cwd": "${workspaceFolder}",
+      "postDebugTask": "Stop j3Markdown Dev",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      }
+    }
+  ]
+}

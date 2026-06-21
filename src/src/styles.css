@@ -603,26 +603,7 @@ button {
   outline-offset: 2px;
 }
 
-.modal-dialog__license-details {
-  min-width: 0;
-}
-
-.modal-dialog__license-summary {
-  cursor: pointer;
-  color: #1d4ed8;
-}
-
-.modal-dialog__license-summary:focus {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-.modal-dialog__license-description {
-  margin-top: 10px;
-  color: #4b5563;
-}
-
-.modal-dialog__license-text {
+.modal-dialog__about-text {
   max-height: min(46vh, 360px);
   margin: 10px 0 0;
   padding: 10px;
@@ -642,7 +623,12 @@ button {
   white-space: pre-wrap;
 }
 
-.modal-dialog__license-text:focus {
+.modal-dialog__about-text {
+  max-height: min(32vh, 260px);
+  margin: 0;
+}
+
+.modal-dialog__about-text:focus {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
 }

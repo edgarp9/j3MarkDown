@@ -157,6 +157,9 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
   },
+  optimizeDeps: {
+    holdUntilCrawlEnd: false,
+  },
   envPrefix: ["VITE_", "TAURI_"],
   build: {
     rollupOptions: {

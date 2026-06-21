@@ -9,6 +9,7 @@ This document is the canonical source for architecture. `docs/canonical-sources.
 - The JavaScript package manager is `pnpm`; do not add npm or Yarn lockfiles.
 - Core editor features must work offline after installation and must not depend on network runtime services.
 - The Windows executable and main application window use `src-tauri/icons/icon.ico`, which must stay synchronized with the repository-root `icon.ico` asset.
+- VS Code F5 development launch must run through the repository-owned VS Code Tauri dev lifecycle scripts. The start script records the launch root PID, and the stop task must terminate that recorded Windows process tree so Shift+F5 also cleans up Tauri CLI, Vite, Cargo, Rust compiler, and app child processes.
 
 ## Frontend Structure
 

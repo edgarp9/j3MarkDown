@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "j3Markdown",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.j3markdown.desktop",
   "build": {
     "beforeDevCommand": "corepack pnpm dev",
@@ -18,7 +18,9 @@
         "height": 500,
         "minWidth": 600,
         "minHeight": 500,
-        "resizable": true
+        "resizable": true,
+        "visible": false,
+        "backgroundColor": "#f8fafc"
       }
     ],
     "security": {
@@ -49,6 +51,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt",
+      "../about.txt": "about.txt"
+    }
   }
 }

@@ -9,6 +9,8 @@ const CHROME_PORT = Number(process.env.J3MARKDOWN_E2E_CHROME_PORT ?? 9338);
 
 const TAURI_TEST_MOCK = String.raw`
 var __UNSAVED_TEST_PARAMS__ = new URLSearchParams(window.location.search);
+var __UNSAVED_TEST_DELAY_LAUNCH_PATHS__ =
+  __UNSAVED_TEST_PARAMS__.get('delayLaunchPaths') === '1';
 
 function isCloseRequestedListener(cmd, args = {}) {
   const eventName = typeof args.event === 'string' ? args.event : '';
@@ -25,6 +27,8 @@ window.__UNSAVED_TEST__ = {
   invocations: [],
   callbacks: {},
   callbackSeq: 1,
+  delayedStartupCommands: [],
+  delayedStartupResolvers: [],
   saveMode: 'success',
   saveAsMode: 'success',
   closeListenerMode: __UNSAVED_TEST_PARAMS__.get('closeListenerMode') || 'success',
@@ -42,6 +46,24 @@ window.__UNSAVED_TEST__ = {
   isCloseRequestedListener
 };
 
+window.__UNSAVED_TEST__.releaseDelayedStartupCommands = () => {
+  const resolvers = window.__UNSAVED_TEST__.delayedStartupResolvers.splice(0);
+  for (const resolve of resolvers) {
+    resolve();
+  }
+};
+
+function delayStartupCommand(command) {
+  if (!__UNSAVED_TEST_DELAY_LAUNCH_PATHS__ || command !== 'get_launch_paths') {
+    return Promise.resolve();
+  }
+
+  window.__UNSAVED_TEST__.delayedStartupCommands.push(command);
+  return new Promise((resolve) => {
+    window.__UNSAVED_TEST__.delayedStartupResolvers.push(resolve);
+  });
+}
+
 window.__TAURI_INTERNALS__ = {
   metadata: {
     currentWindow: { label: 'main' },
@@ -51,6 +73,7 @@ window.__TAURI_INTERNALS__ = {
     window.__UNSAVED_TEST__.invocations.push({ cmd, args });
 
     if (cmd === 'get_launch_paths') {
+      await delayStartupCommand(cmd);
       return [];
     }
 
@@ -59,6 +82,18 @@ window.__TAURI_INTERNALS__ = {
         version: '0.1.0-test',
         githubUrl: 'https://github.com/edgarp9'
       };
+    }
+
+    if (cmd === 'get_about_text') {
+      return [
+        'j3Markdown',
+        '',
+        'Version: 0.1.0-test',
+        'Source code for this release:',
+        'https://github.com/edgarp9',
+        '',
+        'THIRD_PARTY_NOTICES.txt'
+      ].join('\n');
     }
 
     if (cmd === 'open_about_link') {
@@ -190,6 +225,14 @@ async function run() {
   await page.waitForNoDialog("window close guard failure modal close");
   results.push("window close listener registration failure is shown as a modal error");
 
+  await page.loadShellBeforeLaunchPaths("startup-shell-before-launch-paths");
+  info = await page.modalInfo();
+  assert.equal(info.tabTitles[0], "Untitled.md");
+  assert.equal(info.invocations.some(isShowCommand), true);
+  await page.evaluate("window.__UNSAVED_TEST__.releaseDelayedStartupCommands()");
+  await page.waitForActiveEditor();
+  results.push("startup renders the editor shell before launch path IPC completes");
+
   await page.load("clean-opened-list-close");
   await page.openSavedFile("C:\\Notes\\List.md", "List.md", "# Heading\n\n- one\n- two");
   await delay(1200);
@@ -201,6 +244,102 @@ async function run() {
   assert.deepEqual(info.tabTitles, ["Untitled-2.md"]);
   assert.equal(info.invocations.some(isSaveCommand), false);
   results.push("opened list documents stay clean after Milkdown initialization");
+
+  await page.load("clean-opened-nested-list-window-close");
+  await page.openSavedFile(
+    "C:\\Notes\\PromptLike.md",
+    "PromptLike.md",
+    createNestedListNormalizationMarkdown(),
+  );
+  await delay(2500);
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["PromptLike.md"]);
+  await page.triggerWindowClose();
+  await page.waitForNoDialog("clean nested-list prompt window close");
+  info = await page.modalInfo();
+  assert.equal(info.destroyCallCount, 1);
+  assert.equal(info.invocations.some(isSaveCommand), false);
+  results.push("opened nested-list documents stay clean after delayed Milkdown normalization");
+
+  await page.load("clean-opened-large-close");
+  await page.openSavedFile(
+    "C:\\Notes\\Large.md",
+    "Large.md",
+    createLargeMarkdown("large opened clean close"),
+  );
+  await delay(1600);
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["Large.md"]);
+  await page.clickActiveTabClose();
+  await page.waitForNoDialog("clean opened large close");
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["Untitled-2.md"]);
+  assert.equal(info.invocations.some(isSaveCommand), false);
+  results.push("large opened documents stay clean after pending editor transactions");
+
+  await page.load("clean-opened-large-window-close");
+  await page.openSavedFile(
+    "C:\\Notes\\LargeWindowClose.md",
+    "LargeWindowClose.md",
+    createLargeMarkdown("large opened clean window close"),
+  );
+  await page.triggerWindowClose();
+  await page.waitForNoDialog("clean large window close");
+  info = await page.modalInfo();
+  assert.equal(info.destroyCallCount, 1);
+  assert.equal(info.invocations.some(isSaveCommand), false);
+  results.push("large clean opened documents do not show unsaved dialog on window close");
+
+  await page.load("large-undo-clean-close");
+  await page.openSavedFile(
+    "C:\\Notes\\LargeUndo.md",
+    "LargeUndo.md",
+    createVeryLargeMarkdown("large undo clean close"),
+  );
+  await page.edit("temporary dirty edit");
+  await page.pressCtrlShortcut("z");
+  await page.waitFor(
+    "!document.querySelector('.ProseMirror')?.textContent?.includes('temporary dirty edit')",
+    "large document undo restored editor text",
+  );
+  await page.clickActiveTabClose();
+  await page.waitForNoDialog("large undo clean close");
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["Untitled-2.md"]);
+  assert.equal(info.invocations.some(isSaveCommand), false);
+  results.push("large documents restored to saved content close without unsaved dialog");
+
+  await page.load("clean-opened-crlf-close");
+  await page.openSavedFile(
+    "C:\\Notes\\Crlf.md",
+    "Crlf.md",
+    "# CRLF\r\n\r\nThis file uses Windows line endings.\r\n",
+  );
+  await delay(1200);
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["Crlf.md"]);
+  await page.clickActiveTabClose();
+  await page.waitForNoDialog("clean opened CRLF close");
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["Untitled-2.md"]);
+  assert.equal(info.invocations.some(isSaveCommand), false);
+  results.push("opened CRLF documents stay clean after Milkdown serialization");
+
+  await page.load("clean-opened-whitespace-close");
+  await page.openSavedFile(
+    "C:\\Notes\\Whitespace.md",
+    "Whitespace.md",
+    "\r\n\r\n  \t\r\n",
+  );
+  await delay(1200);
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["Whitespace.md"]);
+  await page.clickActiveTabClose();
+  await page.waitForNoDialog("clean opened whitespace-only close");
+  info = await page.modalInfo();
+  assert.deepEqual(info.tabTitles, ["Untitled-2.md"]);
+  assert.equal(info.invocations.some(isSaveCommand), false);
+  results.push("opened whitespace-only documents stay clean after Milkdown normalization");
 
   await page.load("cancel-click");
   await page.edit("cancel flow");
@@ -484,6 +623,36 @@ function isSaveCommand(call) {
   return call.cmd === "save_markdown_file" || call.cmd === "save_markdown_file_as";
 }
 
+function isShowCommand(call) {
+  return call.cmd === "plugin:window|show";
+}
+
+function createLargeMarkdown(label) {
+  return Array.from({ length: 900 }, (_, index) => {
+    return `${label} line ${String(index).padStart(4, "0")} keeps this opened document over the pending-change threshold.`;
+  }).join("\n");
+}
+
+function createVeryLargeMarkdown(label) {
+  return Array.from({ length: 2400 }, (_, index) => {
+    return `${label} line ${String(index).padStart(4, "0")} keeps this opened document over the saved-comparison threshold.`;
+  }).join("\n");
+}
+
+function createNestedListNormalizationMarkdown() {
+  return [
+    "작업 지침:",
+    "",
+    "1. 저장소 구조를 먼저 확인하세요.",
+    "   - package.json, pnpm-lock.yaml, Cargo.toml, THIRD_PARTY_NOTICES.txt 파일을 검색하세요.",
+    "   - 이미 존재하는 LICENSE, NOTICE, THIRD_PARTY_NOTICES.txt를 확인하세요.",
+    "",
+    "2. 사용 중인 직접/간접 라이브러리를 조사하세요.",
+    "   - dev-only 의존성과 런타임/배포 의존성을 구분하세요.",
+    "   - 라이선스가 불명확한 항목은 “검토 필요”로 표시하세요.",
+  ].join("\n");
+}
+
 async function ensureDevServer() {
   if (await isHttpAvailable(APP_URL)) {
     return {
@@ -610,7 +779,7 @@ function findChromeExecutable() {
   return chromePath;
 }
 
-async function waitUntil(predicate, label, attempts = 200) {
+async function waitUntil(predicate, label, attempts = 500) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (await predicate()) {
       return;
@@ -643,6 +812,7 @@ class ChromeCdp {
 
   async createPageSession() {
     const target = await this.send("Target.createTarget", { url: "about:blank" });
+    await this.send("Target.activateTarget", { targetId: target.targetId });
     const attached = await this.send("Target.attachToTarget", {
       targetId: target.targetId,
       flatten: true,
@@ -727,6 +897,28 @@ class AppPage {
       await this.waitFor("Boolean(document.querySelector('.app-shell'))", "app shell");
     }
     await delay(200);
+  }
+
+  async loadShellBeforeLaunchPaths(name) {
+    const loadToken = `${name}-${Date.now()}`;
+    const params = new URLSearchParams({
+      unsaved: loadToken,
+      delayLaunchPaths: "1",
+    });
+
+    await this.cdp.send(
+      "Page.navigate",
+      { url: `${APP_URL}/?${params}` },
+      this.sessionId,
+    );
+    await this.waitFor(
+      `new URLSearchParams(location.search).get("unsaved") === ${JSON.stringify(loadToken)}`,
+      "page navigation",
+    );
+    await this.waitFor(
+      "Boolean(document.querySelector('.app-shell')) && window.__UNSAVED_TEST__.delayedStartupCommands.includes('get_launch_paths')",
+      "startup shell before launch path IPC resolves",
+    );
   }
 
   async edit(text) {

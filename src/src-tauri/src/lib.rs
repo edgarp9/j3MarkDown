@@ -33,6 +33,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info::get_about_info,
+            app_info::get_about_text,
             app_info::open_about_link,
             app_config::read_editor_theme_setting,
             app_config::save_editor_theme_setting,

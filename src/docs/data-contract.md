@@ -33,6 +33,6 @@ Markdown file save responses must be typed results:
 
 Opening a tab in a new app window may pass a non-durable document snapshot through Tauri commands. That snapshot contains only the tab title, optional `filePath`, current Markdown text, saved Markdown baseline, dirty state, and save-target-detached state needed to recreate the tab in the destination window. The snapshot is in-memory handoff data, not app-owned structured persistence.
 
-The About dialog may read non-durable application metadata through a Tauri command. The response contains the app `version` and fixed `githubUrl`; it is not an app-owned content persistence contract. Opening the About link uses a no-argument command that opens only the fixed project URL.
+The About dialog may read non-durable application metadata through a Tauri command. The response contains the app `version` and fixed `githubUrl`; it is not an app-owned content persistence contract. Opening the About link uses a no-argument command that opens only the fixed project URL. Bundled `about.txt` text is a release resource exposed through a no-argument text command with embedded fallback text; it is not app-owned structured persistence.
 
 Future app-owned structured storage must update this document before implementation.

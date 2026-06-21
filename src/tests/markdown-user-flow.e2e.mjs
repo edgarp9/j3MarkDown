@@ -229,6 +229,18 @@ const TAURI_FLOW_TEST_MOCK = String.raw`
         };
       }
 
+      if (cmd === "get_about_text") {
+        return [
+          "j3Markdown",
+          "",
+          "Version: 0.1.0-test",
+          "Source code for this release:",
+          "https://github.com/edgarp9",
+          "",
+          "THIRD_PARTY_NOTICES.txt",
+        ].join("\n");
+      }
+
       if (cmd === "open_about_link") {
         window.__FLOW_TEST__.openedAboutLinks += 1;
         return null;
@@ -729,7 +741,20 @@ async function expectAboutDialog(page) {
   assert.equal(dialogInfo.ariaModal, "true");
   assert.match(dialogInfo.text, /About j3Markdown/u);
   assert.match(dialogInfo.text, /Version 0\.1\.0-test/u);
+  assert.match(dialogInfo.text, /Source code for this release:/u);
+  assert.match(dialogInfo.text, /THIRD_PARTY_NOTICES\.txt/u);
   assert.match(dialogInfo.text, /https:\/\/github\.com\/edgarp9/u);
+  assert.equal(await page.locator("dialog[open] summary").count(), 0);
+  assert.equal(await page.locator("dialog[open] .modal-dialog__license-text").count(), 0);
+  assert.equal(dialogInfo.text.includes("Open Source Licenses"), false);
+  assert.equal(
+    await page.evaluate(() =>
+      window.__FLOW_TEST__.invocations.some(
+        (invocation) => invocation.cmd === "get_third_party_notices_text",
+      ),
+    ),
+    false,
+  );
 
   await page.locator('dialog[open] a[href="https://github.com/edgarp9"]').click();
   await page.waitForFunction(() => window.__FLOW_TEST__.openedAboutLinks === 1);

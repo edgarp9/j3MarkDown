@@ -1,7 +1,7 @@
 {
   "name": "j3markdown",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "pnpm test:unit && pnpm test:unsaved && pnpm test:flow",
-    "test:unit": "tsc -p tsconfig.test.json && node --test tests/document-state.test.mjs tests/window-close-guard.test.mjs",
+    "test:unit": "tsc -p tsconfig.test.json && node --test tests/document-state.test.mjs tests/window-close-guard.test.mjs tests/tauri-config.test.mjs",
     "test:state": "tsc -p tsconfig.test.json && node --test tests/document-state.test.mjs",
     "test:window-close": "tsc -p tsconfig.test.json && node --test tests/window-close-guard.test.mjs",
     "test:unsaved": "node tests/unsaved-protection.e2e.mjs",

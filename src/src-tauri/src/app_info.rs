@@ -1,7 +1,9 @@
 use serde::Serialize;
-use std::io;
+use std::{fs, io};
+use tauri::{path::BaseDirectory, AppHandle, Manager};
 
 const ABOUT_GITHUB_URL: &str = "https://github.com/edgarp9";
+const ABOUT_TEXT: &str = include_str!("../../about.txt");
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +18,11 @@ pub fn get_about_info() -> AboutInfo {
 }
 
 #[tauri::command]
+pub fn get_about_text(handle: AppHandle) -> String {
+    read_release_text_resource(&handle, "about.txt", ABOUT_TEXT)
+}
+
+#[tauri::command]
 pub fn open_about_link() -> Result<(), String> {
     open_url_in_default_browser(ABOUT_GITHUB_URL)
         .map_err(|error| format!("기본 브라우저를 열 수 없습니다: {error}"))
@@ -26,6 +33,16 @@ fn about_info() -> AboutInfo {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         github_url: ABOUT_GITHUB_URL.to_owned(),
     }
+}
+
+fn read_release_text_resource(handle: &AppHandle, resource_name: &str, fallback: &str) -> String {
+    handle
+        .path()
+        .resolve(resource_name, BaseDirectory::Resource)
+        .ok()
+        .and_then(|resource_path| fs::read_to_string(resource_path).ok())
+        .filter(|text| !text.trim().is_empty())
+        .unwrap_or_else(|| fallback.to_owned())
 }
 
 #[cfg(windows)]
@@ -93,7 +110,7 @@ fn open_url_in_default_browser(url: &str) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{about_info, ABOUT_GITHUB_URL};
+    use super::{about_info, ABOUT_GITHUB_URL, ABOUT_TEXT};
     use serde_json::json;
 
     #[test]
@@ -107,5 +124,11 @@ mod tests {
                 "githubUrl": ABOUT_GITHUB_URL,
             })
         );
+    }
+
+    #[test]
+    fn bundled_about_text_is_available_as_fallback() {
+        assert!(ABOUT_TEXT.contains("j3Markdown"));
+        assert!(ABOUT_TEXT.contains("THIRD_PARTY_NOTICES.txt"));
     }
 }

@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default desktop capability for the main editor window.",
   "windows": ["main", "document-window-*"],
-  "permissions": ["core:default", "core:window:allow-destroy"]
+  "permissions": ["core:default", "core:window:allow-destroy", "core:window:allow-show"]
 }

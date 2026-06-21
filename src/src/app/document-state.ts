@@ -397,6 +397,7 @@ export function updateTabMarkdownById(
 
 export function applyEditorMarkdownBaseline(tab: EditorTab, markdown: string): void {
   const previousMarkdown = tab.markdown;
+  const wasDirty = tab.dirty;
   const isBlankEquivalentToSaved =
     tab.filePath === null &&
     !tab.saveTargetDetached &&
@@ -407,20 +408,28 @@ export function applyEditorMarkdownBaseline(tab: EditorTab, markdown: string): v
   tab.markdown = nextMarkdown;
   tab.updatedAt = new Date();
 
-  const dirtyState =
-    isBlankEquivalentToSaved
-      ? { isDirty: false, needsSavedMarkdownComparison: false }
-      : getMarkdownDirtyStateFromSaved(
-          nextMarkdown,
-          tab.lastSavedMarkdown,
-          false,
-          null,
-          false,
-        );
+  if (!wasDirty && !tab.saveTargetDetached) {
+    tab.lastSavedMarkdown = nextMarkdown;
+    tab.dirty = false;
+    tab.needsSavedMarkdownComparison = false;
+  } else {
+    const dirtyState =
+      isBlankEquivalentToSaved
+        ? { isDirty: false, needsSavedMarkdownComparison: false }
+        : getMarkdownDirtyStateFromSaved(
+            nextMarkdown,
+            tab.lastSavedMarkdown,
+            false,
+            null,
+            false,
+          );
 
-  tab.dirty = tab.saveTargetDetached || dirtyState.isDirty;
-  tab.needsSavedMarkdownComparison =
-    !tab.saveTargetDetached && !isBlankEquivalentToSaved && dirtyState.needsSavedMarkdownComparison;
+    tab.dirty = tab.saveTargetDetached || dirtyState.isDirty;
+    tab.needsSavedMarkdownComparison =
+      !tab.saveTargetDetached &&
+      !isBlankEquivalentToSaved &&
+      dirtyState.needsSavedMarkdownComparison;
+  }
 
   if (previousMarkdown !== nextMarkdown) {
     bumpTabContentVersion(tab);

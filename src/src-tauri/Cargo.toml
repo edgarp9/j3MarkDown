@@ -1,6 +1,6 @@
 [package]
 name = "j3markdown"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Windows-first Markdown editor built with Tauri 2."
 authors = ["j3Markdown contributors"]
 edition = "2021"

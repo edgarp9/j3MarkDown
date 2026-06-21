@@ -145,7 +145,16 @@ export function MarkdownEditor({
   let pendingScrollPosition: MarkdownEditorScrollPosition | null = null;
   let pendingScrollRestoreFrame: number | null = null;
   let hasSyncedInitialMarkdownBaseline = false;
+  let hasObservedUserEditIntent = false;
   let editorReady = false;
+
+  editorMount.addEventListener("beforeinput", markUserEditIntent);
+  editorMount.addEventListener("input", markUserEditIntent);
+  editorMount.addEventListener("paste", markUserEditIntent);
+  editorMount.addEventListener("cut", markUserEditIntent);
+  editorMount.addEventListener("drop", markUserEditIntent);
+  editorMount.addEventListener("compositionstart", markUserEditIntent);
+  editorMount.addEventListener("keydown", handleEditorKeyDown);
 
   queueMicrotask(() => {
     if (disposed) {
@@ -186,7 +195,13 @@ export function MarkdownEditor({
       .create()
       .then(() => {
         if (disposed) {
-          void Promise.resolve(crepe.destroy()).catch(console.error);
+          void Promise.resolve(crepe.destroy())
+            .catch(console.error)
+            .finally(() => {
+              if (editor === crepe) {
+                editor = null;
+              }
+            });
           return;
         }
 
@@ -200,6 +215,9 @@ export function MarkdownEditor({
       })
       .catch((error: unknown) => {
         console.error(error);
+        if (editor === crepe) {
+          editor = null;
+        }
         if (!disposed) {
           editorMount.classList.add("markdown-editor--error");
         }
@@ -263,9 +281,20 @@ export function MarkdownEditor({
         pendingScrollRestoreFrame = null;
       }
 
+      editorMount.removeEventListener("beforeinput", markUserEditIntent);
+      editorMount.removeEventListener("input", markUserEditIntent);
+      editorMount.removeEventListener("paste", markUserEditIntent);
+      editorMount.removeEventListener("cut", markUserEditIntent);
+      editorMount.removeEventListener("drop", markUserEditIntent);
+      editorMount.removeEventListener("compositionstart", markUserEditIntent);
+      editorMount.removeEventListener("keydown", handleEditorKeyDown);
+
       if (editor) {
-        void Promise.resolve(editor.destroy()).catch(console.error);
-        editor = null;
+        const editorToDestroy = editor;
+        if (editorReady) {
+          editor = null;
+          void Promise.resolve(editorToDestroy.destroy()).catch(console.error);
+        }
       }
     },
   };
@@ -299,6 +328,43 @@ export function MarkdownEditor({
     if (editorReady) {
       schedulePendingScrollRestore();
     }
+  }
+
+  function markUserEditIntent(): void {
+    hasObservedUserEditIntent = true;
+  }
+
+  function handleEditorKeyDown(event: KeyboardEvent): void {
+    if (isPotentialEditingKey(event)) {
+      markUserEditIntent();
+    }
+  }
+
+  function isPotentialEditingKey(event: KeyboardEvent): boolean {
+    if (event.isComposing) {
+      return true;
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      const key = event.key.toLowerCase();
+      return key === "v" || key === "x" || key === "z" || key === "y";
+    }
+
+    if (event.altKey) {
+      return false;
+    }
+
+    return (
+      event.key.length === 1 ||
+      event.key === "Backspace" ||
+      event.key === "Delete" ||
+      event.key === "Enter" ||
+      event.key === "Tab"
+    );
+  }
+
+  function isEditorMutationCommand(command: MarkdownEditorContextCommand): boolean {
+    return command !== "copy" && command !== "select-all";
   }
 
   function applyPendingScrollPosition(): void {
@@ -377,6 +443,7 @@ export function MarkdownEditor({
 
     const probeIndex = pendingMarkdownProbeIndex;
     const markdown = hasPendingMarkdownChange ? getCurrentMarkdown() : null;
+    const shouldResolveReportedPendingChange = hasReportedPendingMarkdownChange;
 
     if (disposed || !hasPendingMarkdownChange || markdown === null) {
       hasPendingMarkdownChange = false;
@@ -390,6 +457,12 @@ export function MarkdownEditor({
 
     const change = getMarkdownChange(markdown, lastFlushedMarkdown, probeIndex);
     if (!change.hasChanged) {
+      if (shouldResolveReportedPendingChange) {
+        onMarkdownChange?.({
+          tabId,
+          markdown,
+        });
+      }
       return;
     }
 
@@ -397,6 +470,7 @@ export function MarkdownEditor({
     onMarkdownChange?.({
       tabId,
       markdown,
+      isSavedBaselineSync: hasObservedUserEditIntent ? undefined : true,
       knownChangedIndex: change.knownChangedIndex ?? undefined,
     });
   }
@@ -432,7 +506,15 @@ export function MarkdownEditor({
   function syncInitialMarkdownBaseline(): void {
     const markdown = getCurrentMarkdown();
     if (markdown !== null) {
+      const initialMarkdown = lastFlushedMarkdown;
       lastFlushedMarkdown = markdown;
+      if (markdown !== initialMarkdown) {
+        onMarkdownChange?.({
+          tabId,
+          markdown,
+          isSavedBaselineSync: true,
+        });
+      }
     }
   }
 
@@ -560,6 +642,10 @@ export function MarkdownEditor({
 
   async function runContextCommand(command: MarkdownEditorContextCommand): Promise<void> {
     try {
+      if (isEditorMutationCommand(command)) {
+        markUserEditIntent();
+      }
+
       await runContextCommandUnsafe(command);
     } catch (error) {
       throw new Error(editorCopy.editCommandError(command), { cause: error });
@@ -640,7 +726,7 @@ export function MarkdownEditor({
   }
 
   function getEditorView(): EditorView | null {
-    if (!editor) {
+    if (!editor || !editorReady) {
       return null;
     }
 

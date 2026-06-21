@@ -9,6 +9,46 @@ Canonical sources:
 - UI behavior: `docs/ui-behavior.md`
 - Architecture: `docs/architecture.md`
 
+## Latest VS Code F5 Lifecycle Check
+
+Date: 2026-06-22
+Environment: Windows development workspace at `C:\_my\src\j3MarkDown`
+
+Status: completed
+
+Canonical source checked before implementation:
+
+- Architecture: `docs/architecture.md`
+
+Finding:
+
+- VS Code F5 used a `node-terminal` launch command that directly ran `corepack pnpm run tauri:dev`.
+- On Windows, that command creates a nested process tree: PowerShell, Corepack, pnpm, Tauri CLI, Tauri `beforeDevCommand`, Vite, Cargo/Rust build processes, and eventually the app executable.
+- Reproduction showed that terminating only the launch parent left child processes from the dev tree alive. `taskkill /T` was required to clean the full tree.
+- The root cause was VS Code launch lifecycle ownership, not the app's window-close/unsaved-change code.
+
+Fix applied:
+
+- `docs/architecture.md` now records the VS Code Tauri dev lifecycle rule.
+- `.vscode/launch.json` now starts `scripts/start-vscode-tauri-dev.ps1` instead of directly running `tauri:dev`.
+- `.vscode/tasks.json` adds the `Stop j3Markdown Dev` post-debug task.
+- `scripts/start-vscode-tauri-dev.ps1` records the launch root PID and still runs `corepack pnpm run tauri:dev`.
+- `scripts/stop-vscode-tauri-dev.ps1` validates the recorded workspace/process and terminates the recorded Windows process tree with `taskkill /T /F`.
+- `tests/tauri-config.test.mjs` now guards the VS Code launch/stop lifecycle configuration.
+
+Command results:
+
+| Command/check | Result | Notes |
+| --- | --- | --- |
+| Parent-only `tauri dev` termination reproduction | Reproduced | After killing only the parent, child Vite/Tauri/Rust processes remained until the tree was killed. |
+| Wrapper start plus stop task script | Pass | The recorded PID tree was stopped; PID file was removed; port `127.0.0.1:1420` was closed; no matching dev processes remained. |
+| `corepack pnpm test:unit` | Pass | 47 unit/config tests passed, including the new VS Code lifecycle guard. |
+| `corepack pnpm check` | Pass | TypeScript and third-party license checks passed. |
+
+Residual risks:
+
+- The automated lifecycle check exercises the same scripts used by VS Code, but it does not physically press the VS Code Shift+F5 button. The VS Code configuration is covered by static regression tests and the post-debug task script was run directly.
+
 ## Latest Full Menu Function Audit Recheck
 
 Date: 2026-06-18

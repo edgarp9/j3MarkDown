@@ -534,7 +534,7 @@ test("editor-origin markdown updates only mutate the source tab", () => {
   assert.equal(secondTab.markdown, "");
 });
 
-test("editor baseline sync marks opened Milkdown-normalized content dirty", () => {
+test("editor baseline sync keeps clean opened Milkdown-normalized content clean", () => {
   const tabs = [createUntitledTab()];
   const originalMarkdown = "# Heading\n\n- one\n- two";
   const { tab } = applyOpenedMarkdownDocument(tabs, tabs[0].id, {
@@ -548,18 +548,38 @@ test("editor baseline sync marks opened Milkdown-normalized content dirty", () =
   applyEditorMarkdownBaseline(tab, normalizedMarkdown);
 
   assert.equal(tab.markdown, normalizedMarkdown);
-  assert.equal(tab.lastSavedMarkdown, originalMarkdown);
-  assert.equal(tab.dirty, true);
+  assert.equal(tab.lastSavedMarkdown, normalizedMarkdown);
+  assert.equal(tab.dirty, false);
   assert.equal(getTabContentVersion(tab), initialVersion + 1);
 
   updateTabMarkdown(tab, "# Heading\n\n* one\n\n* two\n\nchanged");
   assert.equal(tab.dirty, true);
 
   updateTabMarkdown(tab, normalizedMarkdown);
-  assert.equal(tab.dirty, true);
+  assert.equal(tab.dirty, false);
 
   updateTabMarkdown(tab, originalMarkdown);
-  assert.equal(tab.dirty, false);
+  assert.equal(tab.dirty, true);
+});
+
+test("editor baseline sync keeps dirty opened Milkdown-normalized content dirty", () => {
+  const tabs = [createUntitledTab()];
+  const originalMarkdown = "# Heading\n\n- one\n- two";
+  const { tab } = applyOpenedMarkdownDocument(tabs, tabs[0].id, {
+    path: String.raw`C:\Notes\List.md`,
+    title: "List.md",
+    content: originalMarkdown,
+  });
+  updateTabMarkdown(tab, `${originalMarkdown}\n\nuser edit`);
+  const initialVersion = getTabContentVersion(tab);
+  const normalizedMarkdown = "# Heading\n\n* one\n\n* two\n\nuser edit";
+
+  applyEditorMarkdownBaseline(tab, normalizedMarkdown);
+
+  assert.equal(tab.markdown, normalizedMarkdown);
+  assert.equal(tab.lastSavedMarkdown, originalMarkdown);
+  assert.equal(tab.dirty, true);
+  assert.equal(getTabContentVersion(tab), initialVersion + 1);
 });
 
 test("completing pending saved comparison clears false dirty state before close", () => {
