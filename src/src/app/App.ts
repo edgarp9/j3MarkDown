@@ -3,12 +3,13 @@ import {
   EditorContextMenu,
   type EditorContextMenuEntry,
 } from "../components/EditorContextMenu";
-import type {
-  MarkdownEditorChange,
-  MarkdownEditorContextCommand,
-  MarkdownEditorHandle,
-  MarkdownEditorProps,
-  MarkdownEditorScrollPosition,
+import {
+  MarkdownEditor as createMarkdownEditor,
+  type MarkdownEditorChange,
+  type MarkdownEditorContextCommand,
+  type MarkdownEditorHandle,
+  type MarkdownEditorProps,
+  type MarkdownEditorScrollPosition,
 } from "../components/MarkdownEditor";
 import { TabBar } from "../components/TabBar";
 import {
@@ -90,6 +91,14 @@ import {
 import { getAboutText } from "./about-text";
 import { DebouncedLatestSave, PerKeySaveQueue } from "./save-queue";
 import {
+  markStartupPoint,
+  measureStartupBetween,
+  measureStartupFromNavigationStart,
+  measureStartupWork,
+  reportStartupProfile,
+  startStartupSpan,
+} from "./startup-profile";
+import {
   startCurrentWindowCloseGuard,
   type WindowCloseGuard,
 } from "./window-close-guard";
@@ -165,12 +174,14 @@ type DetachedWindowHandoffMessage =
 type MarkdownEditorFactory = (props: MarkdownEditorProps) => MarkdownEditorHandle;
 
 export class MarkdownApp {
-  private readonly tabs: EditorTab[] = [createUntitledTab()];
+  private readonly tabs: EditorTab[] = measureStartupWork(
+    "initial untitled tab state",
+    () => [createUntitledTab()],
+  );
   private activeTabId: string = this.tabs[0].id;
   private markdownEditor: MarkdownEditorHandle | null = null;
   private readonly markdownEditors = new Map<string, MarkdownEditorHandle>();
-  private markdownEditorFactory: MarkdownEditorFactory | null = null;
-  private markdownEditorFactoryLoad: Promise<MarkdownEditorFactory> | null = null;
+  private readonly markdownEditorFactory: MarkdownEditorFactory = createMarkdownEditor;
   private readonly markdownEditorScrollPositions = new Map<
     string,
     MarkdownEditorScrollPosition
@@ -197,6 +208,9 @@ export class MarkdownApp {
   private tabContextMenuElement: HTMLElement | null = null;
   private pendingWindowCloseGuardRegistrationError: unknown = null;
   private hasRequestedInitialWindowShow = false;
+  private hasCompletedInitialAppStartup = false;
+  private hasObservedFirstEditableEditorReady = false;
+  private hasReportedFirstEditableStartupProfile = false;
   private readonly activeDocumentStatsCache = new Map<string, ActiveDocumentStatsCache>();
   private activeDocumentStatsUpdateTimer: number | null = null;
   private activeDocumentStatsIdleCallback: number | null = null;
@@ -257,6 +271,7 @@ export class MarkdownApp {
   public constructor(private readonly root: HTMLElement) {}
 
   public mount(): void {
+    markStartupPoint("MarkdownApp mount started");
     this.lifecycleVersion += 1;
 
     this.root.addEventListener("contextmenu", this.handleRootContextMenu);
@@ -310,6 +325,11 @@ export class MarkdownApp {
   }
 
   private render(): void {
+    const isInitialRender = !this.toolbarElement;
+    const finishInitialRender = isInitialRender
+      ? startStartupSpan("initial app shell render")
+      : null;
+
     this.hideContextMenus();
     this.cancelActiveDocumentChromeUpdate();
     this.cancelActiveDocumentStatsRefresh();
@@ -331,6 +351,16 @@ export class MarkdownApp {
     this.root.replaceChildren(shell.shellElement);
     this.restoreMarkdownEditorScrollPosition(activeTab.id);
     this.showWindowAfterInitialRender();
+
+    finishInitialRender?.();
+    if (isInitialRender) {
+      markStartupPoint("initial app shell rendered");
+      measureStartupBetween(
+        "MarkdownApp mount start to initial shell render",
+        "MarkdownApp mount started",
+        "initial app shell rendered",
+      );
+    }
   }
 
   private showWindowAfterInitialRender(): void {
@@ -339,9 +369,26 @@ export class MarkdownApp {
     }
 
     this.hasRequestedInitialWindowShow = true;
+    const finishInitialWindowShow = startStartupSpan("initial window show IPC");
+    const markInitialWindowShown = (): void => {
+      markStartupPoint("initial window shown");
+      measureStartupBetween(
+        "frontend JS start to initial window shown",
+        "frontend JS start",
+        "initial window shown",
+      );
+      measureStartupFromNavigationStart(
+        "WebView navigation start to initial window shown",
+        "initial window shown",
+      );
+      finishInitialWindowShow();
+    };
+
     void getCurrentWindow()
       .show()
+      .then(markInitialWindowShown)
       .catch((error: unknown) => {
+        finishInitialWindowShow();
         console.warn("App window could not be shown after initial render.", error);
       });
   }
@@ -403,6 +450,9 @@ export class MarkdownApp {
 
   private startFileDropListener(): void {
     const lifecycleVersion = this.lifecycleVersion;
+    const finishFileDropListenerRegistration = startStartupSpan(
+      "file drop listener registration",
+    );
 
     void listenForDroppedFiles({
       onDropPaths: (paths) => {
@@ -442,13 +492,17 @@ export class MarkdownApp {
 
         console.warn("File drag-and-drop is unavailable.", error);
         this.showErrorDialog(this.copy.errors.dropError, this.getErrorMessage(error));
-      });
+      })
+      .finally(finishFileDropListenerRegistration);
   }
 
   private async watchWindowCloseGuardRegistration(
     lifecycleVersion: number,
     windowCloseGuard: WindowCloseGuard,
   ): Promise<void> {
+    const finishWindowCloseGuardRegistration = startStartupSpan(
+      "window close guard registration",
+    );
     try {
       await windowCloseGuard.ready;
     } catch (error) {
@@ -457,6 +511,8 @@ export class MarkdownApp {
       }
 
       this.handleWindowCloseGuardRegistrationError(error);
+    } finally {
+      finishWindowCloseGuardRegistration();
     }
 
     if (
@@ -687,14 +743,19 @@ export class MarkdownApp {
   }
 
   private async openInitialDocuments(): Promise<void> {
+    const finishInitialDocuments = startStartupSpan("initial document preparation");
     const detachedDocumentToken = getDetachedDocumentToken(window.location.search);
 
-    if (detachedDocumentToken) {
-      await this.openDetachedWindowDocument(detachedDocumentToken);
-      return;
-    }
+    try {
+      if (detachedDocumentToken) {
+        await this.openDetachedWindowDocument(detachedDocumentToken);
+        return;
+      }
 
-    await this.openLaunchDocuments();
+      await this.openLaunchDocuments();
+    } finally {
+      finishInitialDocuments();
+    }
   }
 
   private async openDetachedWindowDocument(token: string): Promise<void> {
@@ -745,8 +806,12 @@ export class MarkdownApp {
 
   private async openLaunchDocuments(): Promise<void> {
     try {
-      const paths = await getLaunchPaths();
-      await this.openDocumentsAtPaths(paths, this.copy.errors.cannotOpen);
+      const finishLaunchPathIpc = startStartupSpan("startup launch path IPC");
+      const paths = await getLaunchPaths().finally(finishLaunchPathIpc);
+      const finishLaunchDocumentOpen = startStartupSpan("startup launch documents open");
+      await this.openDocumentsAtPaths(paths, this.copy.errors.cannotOpen).finally(
+        finishLaunchDocumentOpen,
+      );
     } catch (error) {
       if (!this.toolbarElement) {
         this.render();
@@ -1588,10 +1653,11 @@ export class MarkdownApp {
     themeSettingVersion: number,
     languageSettingVersion: number,
   ): Promise<void> {
+    const finishPersistedSettingsLoad = startStartupSpan("persisted app settings load");
     const [languageId, themeId] = await Promise.all([
       loadUiLanguageSetting(),
       loadEditorThemeSetting(),
-    ]);
+    ]).finally(finishPersistedSettingsLoad);
 
     if (this.lifecycleVersion !== lifecycleVersion) {
       return;
@@ -1636,6 +1702,7 @@ export class MarkdownApp {
     themeSettingVersion: number,
     languageSettingVersion: number,
   ): Promise<void> {
+    const finishInitialAppRender = startStartupSpan("initial app orchestration");
     try {
       if (!this.toolbarElement) {
         this.render();
@@ -1652,6 +1719,7 @@ export class MarkdownApp {
 
       await this.openInitialDocuments();
     } finally {
+      finishInitialAppRender();
       if (this.lifecycleVersion !== lifecycleVersion) {
         return;
       }
@@ -1661,22 +1729,25 @@ export class MarkdownApp {
       }
       this.startFileDropListener();
       this.showPendingWindowCloseGuardRegistrationError();
+      this.hasCompletedInitialAppStartup = true;
+      markStartupPoint("initial app orchestration completed");
+      measureStartupBetween(
+        "frontend JS start to initial app orchestration complete",
+        "frontend JS start",
+        "initial app orchestration completed",
+      );
+      this.reportFirstEditableStartupProfile();
     }
   }
 
   private getOrCreateMarkdownEditorElement(tab: EditorTab): HTMLElement {
     const editor = this.getOrCreateMarkdownEditor(tab);
 
-    if (editor) {
-      this.markdownEditor = editor;
-      return editor.element;
-    }
-
-    this.markdownEditor = null;
-    return this.createPendingMarkdownEditorElement(tab);
+    this.markdownEditor = editor;
+    return editor.element;
   }
 
-  private getOrCreateMarkdownEditor(tab: EditorTab): MarkdownEditorHandle | null {
+  private getOrCreateMarkdownEditor(tab: EditorTab): MarkdownEditorHandle {
     const existingEditor = this.markdownEditors.get(tab.id);
 
     if (existingEditor) {
@@ -1685,18 +1756,15 @@ export class MarkdownApp {
       return existingEditor;
     }
 
-    const markdownEditorFactory = this.markdownEditorFactory;
-    if (!markdownEditorFactory) {
-      this.ensureMarkdownEditorFactoryLoad();
-      return null;
-    }
-
-    const editor = markdownEditorFactory({
-      tab,
-      themeId: this.editorThemeId,
-      copy: this.copy.editor,
-      onChange: (change) => this.updateEditorContent(change),
-    });
+    const editor = measureStartupWork("MarkdownEditor handle creation", () =>
+      this.markdownEditorFactory({
+        tab,
+        themeId: this.editorThemeId,
+        copy: this.copy.editor,
+        onChange: (change) => this.updateEditorContent(change),
+        onReady: (ready) => this.handleMarkdownEditorReady(ready.tabId),
+      }),
+    );
 
     this.markdownEditors.set(tab.id, editor);
     return editor;
@@ -1705,8 +1773,7 @@ export class MarkdownApp {
   private showActiveMarkdownEditor(activeTab: EditorTab): boolean {
     const nextEditor = this.getOrCreateMarkdownEditor(activeTab);
     const currentEditorElement = this.root.querySelector<HTMLElement>("[data-region='editor']");
-    const nextEditorElement =
-      nextEditor?.element ?? this.createPendingMarkdownEditorElement(activeTab);
+    const nextEditorElement = nextEditor.element;
 
     this.markdownEditor = nextEditor;
     this.pruneActiveDocumentStatsCache(activeTab.id);
@@ -1727,73 +1794,49 @@ export class MarkdownApp {
     return true;
   }
 
-  private createPendingMarkdownEditorElement(tab: EditorTab): HTMLElement {
-    const theme = getMarkdownEditorTheme(this.editorThemeId);
-    const editorHost = document.createElement("section");
-    editorHost.className = "editor-host";
-    editorHost.setAttribute("data-region", "editor");
-    editorHost.dataset.editorTabId = tab.id;
-
-    const editorMount = document.createElement("div");
-    editorMount.className = "markdown-editor markdown-editor--pending";
-    editorMount.setAttribute("aria-label", this.copy.editor.ariaLabel);
-    editorMount.dataset.errorLabel = this.copy.editor.errorLabel;
-    editorMount.dataset.editorTabId = tab.id;
-    editorMount.dataset.editorThemeId = theme.id;
-    editorMount.dataset.editorThemeMode = theme.isDark ? "dark" : "light";
-
-    editorHost.append(editorMount);
-    this.ensureMarkdownEditorFactoryLoad();
-
-    return editorHost;
-  }
-
-  private ensureMarkdownEditorFactoryLoad(): void {
-    if (this.markdownEditorFactory || this.markdownEditorFactoryLoad) {
+  private handleMarkdownEditorReady(tabId: string): void {
+    if (
+      this.hasReportedFirstEditableStartupProfile ||
+      tabId !== this.activeTabId
+    ) {
       return;
     }
 
-    const lifecycleVersion = this.lifecycleVersion;
-    this.markdownEditorFactoryLoad = import("../components/MarkdownEditor").then(
-      (module) => module.MarkdownEditor,
+    markStartupPoint("first editable editor ready");
+    this.hasObservedFirstEditableEditorReady = true;
+    this.reportFirstEditableStartupProfile();
+  }
+
+  private reportFirstEditableStartupProfile(): void {
+    if (
+      this.hasReportedFirstEditableStartupProfile ||
+      !this.hasCompletedInitialAppStartup ||
+      !this.hasObservedFirstEditableEditorReady
+    ) {
+      return;
+    }
+
+    this.hasReportedFirstEditableStartupProfile = true;
+    measureStartupBetween(
+      "frontend JS start to first editable editor",
+      "frontend JS start",
+      "first editable editor ready",
     );
-
-    void this.markdownEditorFactoryLoad
-      .then((markdownEditorFactory) => {
-        this.markdownEditorFactory = markdownEditorFactory;
-        this.markdownEditorFactoryLoad = null;
-
-        if (this.lifecycleVersion !== lifecycleVersion) {
-          return;
-        }
-
-        this.showLoadedMarkdownEditorForActiveTab();
-      })
-      .catch((error: unknown) => {
-        this.markdownEditorFactoryLoad = null;
-        console.error("Markdown editor module could not be loaded.", error);
-
-        if (this.lifecycleVersion !== lifecycleVersion) {
-          return;
-        }
-
-        const currentEditorElement =
-          this.root.querySelector<HTMLElement>("[data-region='editor']");
-        currentEditorElement
-          ?.querySelector<HTMLElement>(".markdown-editor")
-          ?.classList.add("markdown-editor--error");
-        this.showErrorDialog(this.copy.errors.editFailed, this.getErrorMessage(error));
-      });
-  }
-
-  private showLoadedMarkdownEditorForActiveTab(): void {
-    const currentEditorElement = this.root.querySelector<HTMLElement>("[data-region='editor']");
-
-    if (!currentEditorElement) {
-      return;
-    }
-
-    this.showActiveMarkdownEditor(this.getActiveTab());
+    measureStartupFromNavigationStart(
+      "WebView navigation start to first editable editor",
+      "first editable editor ready",
+    );
+    measureStartupBetween(
+      "MarkdownApp mount start to first editable editor",
+      "MarkdownApp mount started",
+      "first editable editor ready",
+    );
+    measureStartupBetween(
+      "initial shell render to first editable editor",
+      "initial app shell rendered",
+      "first editable editor ready",
+    );
+    reportStartupProfile("first editable editor ready");
   }
 
   private destroyMarkdownEditor(

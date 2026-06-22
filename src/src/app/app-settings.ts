@@ -5,6 +5,7 @@ import {
   type MarkdownEditorThemeId,
 } from "../components/milkdown-themes";
 import { defaultUiLanguage, isUiLanguage, type UiLanguage } from "./i18n";
+import { startStartupSpan } from "./startup-profile";
 
 type AppSettingsIpcContract = {
   read_editor_theme_setting: IpcCommandEntry<string>;
@@ -40,12 +41,17 @@ const ipcCommands = {
 } as const satisfies { [Command in AppSettingsCommandName]: Command };
 
 export async function loadEditorThemeSetting(): Promise<MarkdownEditorThemeId> {
-  return loadValidatedAppSetting(
-    ipcCommands.read_editor_theme_setting,
-    isMarkdownEditorThemeId,
-    defaultMarkdownEditorThemeId,
-    "Editor theme setting could not be loaded.",
-  );
+  const finishEditorThemeRead = startStartupSpan("read editor theme setting IPC");
+  try {
+    return await loadValidatedAppSetting(
+      ipcCommands.read_editor_theme_setting,
+      isMarkdownEditorThemeId,
+      defaultMarkdownEditorThemeId,
+      "Editor theme setting could not be loaded.",
+    );
+  } finally {
+    finishEditorThemeRead();
+  }
 }
 
 export async function saveEditorThemeSetting(
@@ -55,12 +61,17 @@ export async function saveEditorThemeSetting(
 }
 
 export async function loadUiLanguageSetting(): Promise<UiLanguage> {
-  return loadValidatedAppSetting(
-    ipcCommands.read_ui_language_setting,
-    isUiLanguage,
-    defaultUiLanguage,
-    "UI language setting could not be loaded.",
-  );
+  const finishUiLanguageRead = startStartupSpan("read UI language setting IPC");
+  try {
+    return await loadValidatedAppSetting(
+      ipcCommands.read_ui_language_setting,
+      isUiLanguage,
+      defaultUiLanguage,
+      "UI language setting could not be loaded.",
+    );
+  } finally {
+    finishUiLanguageRead();
+  }
 }
 
 export async function saveUiLanguageSetting(languageId: UiLanguage): Promise<void> {

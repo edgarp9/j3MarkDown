@@ -2,7 +2,6 @@ THIRD PARTY NOTICES
 ===================
 
 Project: j3Markdown
-Version: 0.1.1
 Project License: GNU General Public License v3.0 or later (GPL-3.0-or-later)
 Project Repository: https://github.com/edgarp9
 

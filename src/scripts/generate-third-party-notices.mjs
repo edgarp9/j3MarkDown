@@ -17,7 +17,6 @@ const WINDOWS_RELEASE_TARGET = "x86_64-pc-windows-msvc";
 const PROJECT_REPOSITORY_URL = "https://github.com/edgarp9";
 
 function main() {
-  const packageJson = readJson(path.join(ROOT_DIR, "package.json"));
   const npmEntries = getNpmLicenseEntries();
   const rustEntries = getRustRuntimeLicenseEntries();
   const resourceEntries = getBundledResourceEntries();
@@ -26,7 +25,6 @@ function main() {
   assertNoBlockedLicenses(entries);
 
   const noticeText = renderNoticeFile({
-    version: packageJson.version,
     npmEntries,
     rustEntries,
     resourceEntries,
@@ -180,13 +178,7 @@ function hasNormalDependencyKind(depKinds) {
   return (depKinds ?? []).some((depKind) => depKind.kind === null);
 }
 
-function renderNoticeFile({
-  version,
-  npmEntries,
-  rustEntries,
-  resourceEntries,
-  entries,
-}) {
+function renderNoticeFile({ npmEntries, rustEntries, resourceEntries, entries }) {
   const licenseExpressions = [...new Set(entries.map((entry) => entry.license))]
     .sort(compareText);
 
@@ -195,7 +187,6 @@ function renderNoticeFile({
     "===================",
     "",
     "Project: j3Markdown",
-    `Version: ${version}`,
     "Project License: GNU General Public License v3.0 or later (GPL-3.0-or-later)",
     `Project Repository: ${PROJECT_REPOSITORY_URL}`,
     "",

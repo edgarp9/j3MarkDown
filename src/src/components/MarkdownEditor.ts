@@ -6,6 +6,7 @@ import { nord as milkdownNord } from "@milkdown/theme-nord";
 import "@milkdown/crepe/theme/common/style.css";
 import type { EditorTab } from "../app/document-state";
 import type { AppCopy } from "../app/i18n";
+import { startStartupSpan } from "../app/startup-profile";
 import {
   applyMilkdownThemeStyles,
   getMarkdownEditorTheme,
@@ -41,6 +42,11 @@ export interface MarkdownEditorProps {
   themeId: MarkdownEditorThemeId;
   copy: AppCopy["editor"];
   onChange: (change: MarkdownEditorChange) => void;
+  onReady?: (event: MarkdownEditorReadyEvent) => void;
+}
+
+export interface MarkdownEditorReadyEvent {
+  tabId: string;
 }
 
 export type MarkdownEditorChange =
@@ -111,6 +117,7 @@ export function MarkdownEditor({
   themeId,
   copy,
   onChange,
+  onReady,
 }: MarkdownEditorProps): MarkdownEditorHandle {
   const theme = getMarkdownEditorTheme(themeId);
   const tabId = tab.id;
@@ -161,6 +168,9 @@ export function MarkdownEditor({
       return;
     }
 
+    const finishMilkdownInitialization = startStartupSpan(
+      "Milkdown editor initialization",
+    );
     const crepe = new Crepe({
       root: editorMount,
       defaultValue: lastFlushedMarkdown,
@@ -194,6 +204,7 @@ export function MarkdownEditor({
     void crepe
       .create()
       .then(() => {
+        finishMilkdownInitialization();
         if (disposed) {
           void Promise.resolve(crepe.destroy())
             .catch(console.error)
@@ -212,8 +223,10 @@ export function MarkdownEditor({
           .querySelector<HTMLElement>(".ProseMirror")
           ?.focus({ preventScroll: true });
         restorePendingScrollPosition();
+        onReady?.({ tabId });
       })
       .catch((error: unknown) => {
+        finishMilkdownInitialization();
         console.error(error);
         if (editor === crepe) {
           editor = null;
